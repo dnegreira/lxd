@@ -26,19 +26,9 @@ func zfsPoolVolumeSet(dataset string, key string, value string) (string, error) 
 		dataset)
 }
 
-func (s *storageZfs) zfsPoolCheck(pool string) error {
-	output, err := shared.RunCommand(
-		"zfs", "get", "type", "-H", "-o", "value", pool)
-	if err != nil {
-		return fmt.Errorf(strings.Split(output, "\n")[0])
-	}
-
-	poolType := strings.Split(output, "\n")[0]
-	if poolType != "filesystem" {
-		return fmt.Errorf("Unsupported pool type: %s", poolType)
-	}
-
-	return nil
+func zfsPoolCheck(dataset string) (string, error) {
+	return shared.RunCommand(
+		"zfs", "get", "type", "-H", "-o", "value", dataset)
 }
 
 func (s *storageZfs) zfsPoolCreate() error {
@@ -136,6 +126,8 @@ func (s *storageZfs) zfsPoolCreate() error {
 					}
 				}
 			} else {
+///dnegreira: I have rewritten zfsPoolCheck, need to verify how to build
+///correct statement to be passed to function
 				err := s.zfsPoolCheck(vdev)
 				if err != nil {
 					return err
