@@ -84,9 +84,32 @@ var updates = map[int]schema.Update{
 	34: updateFromV33,
 	35: updateFromV34,
 	36: updateFromV35,
+	37: updateFromv36,
 }
 
 // Schema updates begin here
+func updateFromV36(tx *sql.Tx) error {
+	stmts := `
+CREATE TABLE IF NOT EXISTS security_groups (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	UNIQUE (name)
+);
+CREATE TABLE IF NOT EXISTS security_groups_config (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	security_group_id INTEGER NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	source VARCHAR(43),
+	destination_port INTEGER(65535),
+	description TEXT,
+	UNIQUE (name)
+	FOREIGN KEY (security_group_id) references security_groups (id) ON DELETE CASCADE
+);
+`
+	_, err := tx.Exec(stmts)
+	return err
+}
+
 func updateFromV35(tx *sql.Tx) error {
 	stmts := `
 CREATE TABLE tmp (
