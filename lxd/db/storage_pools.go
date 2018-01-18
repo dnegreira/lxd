@@ -67,7 +67,7 @@ func (n *Node) StoragePoolGetID(poolName string) (int64, error) {
 	err := dbQueryRowScan(n.db, query, inargs, outargs)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return -1, NoSuchObjectError
+			return -1, NoSuchStoragePoolError
 		}
 	}
 
@@ -87,7 +87,7 @@ func (n *Node) StoragePoolGet(poolName string) (int64, *api.StoragePool, error) 
 	err := dbQueryRowScan(n.db, query, inargs, outargs)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return -1, nil, NoSuchObjectError
+			return -1, nil, NoSuchStoragePoolError
 		}
 		return -1, nil, err
 	}

@@ -25,6 +25,9 @@ var (
 	 * already do.
 	 */
 	NoSuchObjectError = fmt.Errorf("No such object")
+
+	// NoStoragePoolError happens when a query for a storage pool returns no rows
+	NoSuchStoragePoolError = fmt.Errorf("Storage pool does not exist")
 )
 
 // Node mediates access to LXD's data stored in the node-local SQLite database.
