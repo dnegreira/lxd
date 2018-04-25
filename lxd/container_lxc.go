@@ -207,6 +207,13 @@ func lxcValidConfig(rawLxc string) error {
 			continue
 		}
 
+		unprivOnly := os.Getenv("LXD_UNPRIVILEGED_ONLY")
+		if shared.IsTrue(unprivOnly) {
+			if key == "lxc.idmap" || key == "lxc.id_map" || key == "lxc.include" {
+				return fmt.Errorf("%s can't be set in raw.lxc as LXD was configured to only allow unprivileged containers", key)
+			}
+		}
+
 		// Blacklist some keys
 		if key == "lxc.logfile" || key == "lxc.log.file" {
 			return fmt.Errorf("Setting lxc.logfile is not allowed")
@@ -234,17 +241,26 @@ func lxcValidConfig(rawLxc string) error {
 		if strings.HasPrefix(key, networkKeyPrefix) {
 			fields := strings.Split(key, ".")
 
-			allowedIPKeys := []string{"ipv4.address", "ipv6.address"}
 			if !util.RuntimeLiblxcVersionAtLeast(2, 1, 0) {
-				allowedIPKeys = []string{"ipv4", "ipv6"}
-			}
+				// lxc.network.X.ipv4 or lxc.network.X.ipv6
+				if len(fields) == 4 && shared.StringInSlice(fields[3], []string{"ipv4", "ipv6"}) {
+					continue
+				}
 
-			if len(fields) == 4 && shared.StringInSlice(fields[3], allowedIPKeys) {
-				continue
-			}
+				// lxc.network.X.ipv4.gateway or lxc.network.X.ipv6.gateway
+				if len(fields) == 5 && shared.StringInSlice(fields[3], []string{"ipv4", "ipv6"}) && fields[4] == "gateway" {
+					continue
+				}
+			} else {
+				// lxc.net.X.ipv4.address or lxc.net.X.ipv6.address
+				if len(fields) == 5 && shared.StringInSlice(fields[3], []string{"ipv4", "ipv6"}) && fields[4] == "address" {
+					continue
+				}
 
-			if len(fields) == 5 && shared.StringInSlice(fields[3], allowedIPKeys) && fields[4] == "gateway" {
-				continue
+				// lxc.net.X.ipv4.gateway or lxc.net.X.ipv6.gateway
+				if len(fields) == 5 && shared.StringInSlice(fields[3], []string{"ipv4", "ipv6"}) && fields[4] == "gateway" {
+					continue
+				}
 			}
 
 			return fmt.Errorf("Only interface-specific ipv4/ipv6 %s keys are allowed", networkKeyPrefix)
@@ -507,6 +523,9 @@ type containerLXC struct {
 
 	// Clustering
 	node string
+
+	// Progress tracking
+	op *operation
 }
 
 func (c *containerLXC) createOperation(action string, reusable bool, reuse bool) (*lxcContainerOperation, error) {
@@ -1871,6 +1890,7 @@ func (c *containerLXC) startCommon() (string, error) {
 
 	if !reflect.DeepEqual(idmap, lastIdmap) {
 		logger.Debugf("Container idmap changed, remapping")
+		c.updateProgress("Remapping container filesystem")
 
 		ourStart, err = c.StorageStart()
 		if err != nil {
@@ -1926,6 +1946,8 @@ func (c *containerLXC) startCommon() (string, error) {
 				return "", err
 			}
 		}
+
+		c.updateProgress("")
 	}
 
 	err = c.ConfigKeySet("volatile.last_state.idmap", jsonIdmap)
@@ -5082,6 +5104,11 @@ func (c *containerLXC) Migrate(args *CriuMigrationArgs) error {
 			opts.PredumpDir = fmt.Sprintf("../%s", args.preDumpDir)
 		}
 
+		if !c.IsRunning() {
+			// otherwise the migration will needlessly fail
+			args.stop = false
+		}
+
 		migrateErr = c.c.Migrate(args.cmd, opts)
 	}
 
@@ -8141,6 +8168,28 @@ func (c *containerLXC) StoragePool() (string, error) {
 	return poolName, nil
 }
 
+// Progress tracking
+func (c *containerLXC) SetOperation(op *operation) {
+	c.op = op
+}
+
+func (c *containerLXC) updateProgress(progress string) {
+	if c.op == nil {
+		return
+	}
+
+	meta := c.op.metadata
+	if meta == nil {
+		meta = make(map[string]interface{})
+	}
+
+	if meta["container_progress"] != progress {
+		meta["container_progress"] = progress
+		c.op.UpdateMetadata(meta)
+	}
+}
+
+// Internal MAAS handling
 func (c *containerLXC) maasInterfaces() ([]maas.ContainerInterface, error) {
 	interfaces := []maas.ContainerInterface{}
 	for k, m := range c.expandedDevices {

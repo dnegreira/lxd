@@ -1,3 +1,41 @@
+test_clustering_enable() {
+  LXD_INIT_DIR=$(mktemp -d -p "${TEST_DIR}" XXX)
+  chmod +x "${LXD_INIT_DIR}"
+  spawn_lxd "${LXD_INIT_DIR}" false
+
+  (
+    set -e
+    # shellcheck disable=SC2034
+    LXD_DIR=${LXD_INIT_DIR}
+
+    # Launch a container.
+    ensure_import_testimage
+    lxc storage create default dir
+    lxc profile device add default root disk path="/" pool="default"
+    lxc launch testimage c1
+
+    # A node name is required.
+    ! lxc cluster enable
+
+    # Enable clustering.
+    lxc cluster enable node1
+    lxc cluster list | grep -q node1
+
+    # The container is still there and now shows up as
+    # running on node 1.
+    lxc list | grep c1 | grep -q node1
+
+    # Clustering can't be enabled on an already clustered instance.
+    ! lxc cluster enable node2
+
+    # Delete the container
+    lxc stop c1
+    lxc delete c1
+  )
+
+  kill_lxd "${LXD_INIT_DIR}"
+}
+
 test_clustering_membership() {
   setup_clustering_bridge
   prefix="lxd$$"
@@ -74,39 +112,44 @@ test_clustering_membership() {
   LXD_DIR="${LXD_ONE_DIR}" lxc remote set-url cluster https://10.1.1.102:8443
   lxc network list cluster: | grep -q "${bridge}"
 
-  # Shutdown a non-database node, and wait a few seconds so it will be
+  # Shutdown a database node, and wait a few seconds so it will be
   # detected as down.
   LXD_DIR="${LXD_ONE_DIR}" lxc config set cluster.offline_threshold 5
-  LXD_DIR="${LXD_FIVE_DIR}" lxd shutdown
+  LXD_DIR="${LXD_THREE_DIR}" lxd shutdown
   sleep 10
-  LXD_DIR="${LXD_THREE_DIR}" lxc cluster list | grep "node5" | grep -q "OFFLINE"
+  LXD_DIR="${LXD_TWO_DIR}" lxc cluster list | grep "node3" | grep -q "OFFLINE"
   LXD_DIR="${LXD_TWO_DIR}" lxc config set cluster.offline_threshold 20
 
   # Trying to delete the preseeded network now fails, because a node is degraded.
   ! LXD_DIR="${LXD_TWO_DIR}" lxc network delete "${bridge}"
 
   # Force the removal of the degraded node.
-  LXD_DIR="${LXD_THREE_DIR}" lxc cluster remove node5 --force
+  LXD_DIR="${LXD_TWO_DIR}" lxc cluster remove node3 --force
+
+  # Sleep a bit to let a heartbeat occur and update the list of raft nodes
+  # everywhere, showing that node 4 has been promoted to database node.
+  sleep 8
+  LXD_DIR="${LXD_TWO_DIR}" lxc cluster list | grep "node4" | grep -q "YES"
 
   # Now the preseeded network can be deleted, and all nodes are
   # notified.
   LXD_DIR="${LXD_TWO_DIR}" lxc network delete "${bridge}"
 
   # Rename a node using the pre-existing name.
-  LXD_DIR="${LXD_THREE_DIR}" lxc cluster rename node4 node5
+  LXD_DIR="${LXD_ONE_DIR}" lxc cluster rename node4 node3
 
   # Trying to delete a container which is the only one with a copy of
   # an image results in an error
   LXD_DIR="${LXD_FOUR_DIR}" ensure_import_testimage
-  ! LXD_DIR="${LXD_FOUR_DIR}" lxc cluster remove node5
+  ! LXD_DIR="${LXD_FOUR_DIR}" lxc cluster remove node3
   LXD_DIR="${LXD_TWO_DIR}" lxc image delete testimage
 
   # Remove a node gracefully.
-  LXD_DIR="${LXD_FOUR_DIR}" lxc cluster remove node5
+  LXD_DIR="${LXD_FOUR_DIR}" lxc cluster remove node3
   ! LXD_DIR="${LXD_FOUR_DIR}" lxc cluster list
 
+  LXD_DIR="${LXD_FIVE_DIR}" lxd shutdown
   LXD_DIR="${LXD_FOUR_DIR}" lxd shutdown
-  LXD_DIR="${LXD_THREE_DIR}" lxd shutdown
   LXD_DIR="${LXD_TWO_DIR}" lxd shutdown
   LXD_DIR="${LXD_ONE_DIR}" lxd shutdown
   sleep 2
@@ -118,6 +161,12 @@ test_clustering_membership() {
 
   teardown_clustering_netns
   teardown_clustering_bridge
+
+  kill_lxd "${LXD_ONE_DIR}"
+  kill_lxd "${LXD_TWO_DIR}"
+  kill_lxd "${LXD_THREE_DIR}"
+  kill_lxd "${LXD_FOUR_DIR}"
+  kill_lxd "${LXD_FIVE_DIR}"
 }
 
 test_clustering_containers() {
@@ -268,6 +317,10 @@ test_clustering_containers() {
 
   teardown_clustering_netns
   teardown_clustering_bridge
+
+  kill_lxd "${LXD_ONE_DIR}"
+  kill_lxd "${LXD_TWO_DIR}"
+  kill_lxd "${LXD_THREE_DIR}"
 }
 
 test_clustering_storage() {
@@ -489,6 +542,12 @@ test_clustering_storage() {
 
   teardown_clustering_netns
   teardown_clustering_bridge
+
+  kill_lxd "${LXD_ONE_DIR}"
+  kill_lxd "${LXD_TWO_DIR}"
+  if [ -n "${LXD_THREE_DIR:-}" ]; then
+    kill_lxd "${LXD_THREE_DIR}"
+  fi
 }
 
 test_clustering_network() {
@@ -555,6 +614,9 @@ test_clustering_network() {
 
   teardown_clustering_netns
   teardown_clustering_bridge
+
+  kill_lxd "${LXD_ONE_DIR}"
+  kill_lxd "${LXD_TWO_DIR}"
 }
 
 test_clustering_upgrade() {
@@ -643,4 +705,8 @@ test_clustering_upgrade() {
 
   teardown_clustering_netns
   teardown_clustering_bridge
+
+  kill_lxd "${LXD_ONE_DIR}"
+  kill_lxd "${LXD_TWO_DIR}"
+  kill_lxd "${LXD_THREE_DIR}"
 }
