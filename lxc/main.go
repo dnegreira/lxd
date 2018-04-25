@@ -190,6 +190,10 @@ For help with any of those, simply call them with --help.`))
 	versionCmd := cmdVersion{global: &globalCmd}
 	app.AddCommand(versionCmd.Command())
 
+	// top sub-command
+	topCmd := cmdTop{global: &globalCmd}
+	app.AddCommand(topCmd.Command())
+
 	// Get help command
 	app.InitDefaultHelpCmd()
 	var help *cobra.Command
