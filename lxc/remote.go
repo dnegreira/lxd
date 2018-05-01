@@ -467,30 +467,22 @@ func (c *cmdRemoteList) Run(cmd *cobra.Command, args []string) error {
 		i18n.G("PUBLIC"),
 		i18n.G("STATIC")}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetAutoWrapText(false)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetRowLine(true)
-	table.SetHeader(tableheader)
-	sort.Sort(byName(data))
-	table.AppendBulk(data)
-	table.Render()
-
 	switch c.flagFormat {
-	case listFormatCSV:
-		w := csv.NewWriter(os.Stdout)
-		w.WriteAll(data)
-		if err := w.Error(); err != nil {
-			return err
-		}
 	case listFormatTable:
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetAutoWrapText(false)
 		table.SetAlignment(tablewriter.ALIGN_LEFT)
 		table.SetRowLine(true)
 		table.SetHeader(tableheader)
+		sort.Sort(byName(data))
 		table.AppendBulk(data)
 		table.Render()
+	case listFormatCSV:
+		w := csv.NewWriter(os.Stdout)
+		w.WriteAll(data)
+		if err := w.Error(); err != nil {
+			return err
+		}
 	case listFormatJSON:
 		enc := json.NewEncoder(os.Stdout)
 		err := enc.Encode(data)
