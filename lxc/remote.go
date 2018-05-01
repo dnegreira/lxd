@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/x509"
+	"encoding/csv"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net"
@@ -14,6 +16,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh/terminal"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/lxc/lxd/client"
 	"github.com/lxc/lxd/lxc/config"
@@ -402,8 +405,9 @@ func (c *cmdRemoteGetDefault) Run(cmd *cobra.Command, args []string) error {
 
 // List
 type cmdRemoteList struct {
-	global *cmdGlobal
-	remote *cmdRemote
+	global     *cmdGlobal
+	remote     *cmdRemote
+	flagFormat string
 }
 
 func (c *cmdRemoteList) Command() *cobra.Command {
@@ -415,7 +419,8 @@ func (c *cmdRemoteList) Command() *cobra.Command {
 		`List the available remotes`))
 
 	cmd.RunE = c.Run
-
+	//cmd.Flags().StringVarP(&c.flagColumns, "columns", "c", defaultColumns, i18n.G("Columns")+"``")
+	cmd.Flags().StringVar(&c.flagFormat, "format", "table", i18n.G("Format (csv|json|table|yaml)")+"``")
 	return cmd
 }
 
@@ -454,21 +459,53 @@ func (c *cmdRemoteList) Run(cmd *cobra.Command, args []string) error {
 		}
 		data = append(data, []string{strName, rc.Addr, rc.Protocol, rc.AuthType, strPublic, strStatic})
 	}
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetAutoWrapText(false)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetRowLine(true)
-	table.SetHeader([]string{
+	tableheader := []string{
 		i18n.G("NAME"),
 		i18n.G("URL"),
 		i18n.G("PROTOCOL"),
 		i18n.G("AUTH TYPE"),
 		i18n.G("PUBLIC"),
-		i18n.G("STATIC")})
+		i18n.G("STATIC")}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetAutoWrapText(false)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetRowLine(true)
+	table.SetHeader(tableheader)
 	sort.Sort(byName(data))
 	table.AppendBulk(data)
 	table.Render()
+
+	switch c.flagFormat {
+	case listFormatCSV:
+		w := csv.NewWriter(os.Stdout)
+		w.WriteAll(data)
+		if err := w.Error(); err != nil {
+			return err
+		}
+	case listFormatTable:
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetAutoWrapText(false)
+		table.SetAlignment(tablewriter.ALIGN_LEFT)
+		table.SetRowLine(true)
+		table.SetHeader(tableheader)
+		table.AppendBulk(data)
+		table.Render()
+	case listFormatJSON:
+		enc := json.NewEncoder(os.Stdout)
+		err := enc.Encode(data)
+		if err != nil {
+			return err
+		}
+	case listFormatYAML:
+		out, err := yaml.Marshal(data)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s", out)
+	default:
+		return fmt.Errorf(i18n.G("Invalid format %q"), c.flagFormat)
+	}
 
 	return nil
 }
