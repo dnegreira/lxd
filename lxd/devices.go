@@ -798,7 +798,7 @@ func deviceUSBEvent(s *state.State, usb usbDevice) {
 			}
 
 			if usb.action == "add" {
-				err := c.insertUnixDeviceNum(fmt.Sprintf("unix.%s", name), m, usb.major, usb.minor, usb.path)
+				err := c.insertUnixDeviceNum(fmt.Sprintf("unix.%s", name), m, usb.major, usb.minor, usb.path, false)
 				if err != nil {
 					logger.Error("failed to create usb device", log.Ctx{"err": err, "usb": usb, "container": c.Name()})
 					return
@@ -964,7 +964,7 @@ func deviceRemoveInterface(nic string) error {
 	return err
 }
 
-func deviceMountDisk(srcPath string, dstPath string, readonly bool, recursive bool) error {
+func deviceMountDisk(srcPath string, dstPath string, readonly bool, recursive bool, propagation string) error {
 	var err error
 
 	// Prepare the mount flags
@@ -982,6 +982,29 @@ func deviceMountDisk(srcPath string, dstPath string, readonly bool, recursive bo
 		}
 	} else {
 		flags |= syscall.MS_BIND
+		if propagation != "" {
+			switch propagation {
+			case "private":
+				flags |= syscall.MS_PRIVATE
+			case "shared":
+				flags |= syscall.MS_SHARED
+			case "slave":
+				flags |= syscall.MS_SLAVE
+			case "unbindable":
+				flags |= syscall.MS_UNBINDABLE
+			case "rprivate":
+				flags |= syscall.MS_PRIVATE | syscall.MS_REC
+			case "rshared":
+				flags |= syscall.MS_SHARED | syscall.MS_REC
+			case "rslave":
+				flags |= syscall.MS_SLAVE | syscall.MS_REC
+			case "runbindable":
+				flags |= syscall.MS_UNBINDABLE | syscall.MS_REC
+			default:
+				return fmt.Errorf("Invalid propagation mode '%s'", propagation)
+			}
+		}
+
 		if recursive {
 			flags |= syscall.MS_REC
 		}
@@ -1829,7 +1852,7 @@ func deviceInotifyDirRescan(s *state.State) {
 			}
 			cleanDevPath := filepath.Clean(cmp)
 			if shared.PathExists(cleanDevPath) {
-				c.insertUnixDevice(fmt.Sprintf("unix.%s", name), m)
+				c.insertUnixDevice(fmt.Sprintf("unix.%s", name), m, false)
 			} else {
 				c.removeUnixDevice(fmt.Sprintf("unix.%s", name), m, true)
 			}
@@ -2011,7 +2034,7 @@ func deviceInotifyFileEvent(s *state.State, target *sys.InotifyTargetInfo) {
 			}
 
 			if (target.Mask & syscall.IN_CREATE) > 0 {
-				err := c.insertUnixDevice(fmt.Sprintf("unix.%s", name), m)
+				err := c.insertUnixDevice(fmt.Sprintf("unix.%s", name), m, false)
 				if err != nil {
 					logger.Error("Failed to create unix device", log.Ctx{"err": err, "dev": m, "container": c.Name()})
 					continue
